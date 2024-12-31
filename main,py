@@ -1,0 +1,40 @@
+import torch
+from diffusers import UNet2DModel, DDPMScheduler
+from torchvision.utils import save_image
+import os
+
+image_size = 512 
+output_dir = "./generated_images" 
+model_path = "./new_model/model_epoch_5.pth" 
+
+device = torch.device("cpu")  
+model = UNet2DModel(
+    sample_size=image_size,
+    in_channels=3,
+    out_channels=3,
+    layers_per_block=2,
+    block_out_channels=(128, 256, 512, 512),
+    down_block_types=("DownBlock2D", "DownBlock2D", "DownBlock2D", "DownBlock2D"),
+    up_block_types=("UpBlock2D", "UpBlock2D", "UpBlock2D", "UpBlock2D"),
+).to(device)
+
+model.load_state_dict(torch.load(model_path, map_location=device))
+model.eval() 
+
+noise_scheduler = DDPMScheduler(num_train_timesteps=1000)
+
+def generate_image():
+    os.makedirs(output_dir, exist_ok=True)
+
+    noise = torch.randn(1, 3, image_size, image_size, device=device)
+
+    for t in reversed(range(noise_scheduler.config.num_train_timesteps)):
+        with torch.no_grad():
+            noise_pred = model(noise, torch.tensor([t], device=device)).sample
+        
+        noise = noise_scheduler.step(noise_pred, t, noise).prev_sample
+
+    save_image((noise + 1) / 2, os.path.join(output_dir, "generated_image.png"))
+    print(f"Изображение сохранено в {output_dir}/generated_image.png")
+
+generate_image()
